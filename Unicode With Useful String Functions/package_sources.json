@@ -1,0 +1,38 @@
+{
+  "SerialiseVersion": "1.0.0",
+  "Sources": [
+    {
+      "Name": "Prefabs",
+      "URL": "https://gmpm.gamemaker.io/",
+      "ReleaseStage": "Release",
+      "Scopes": "@gm-prefabs",
+      "Username": null,
+      "Password": null,
+      "InstallSubdirectory": "Prefabs",
+      "IsDefault": true,
+      "ForceAllPackagesVisible": false
+    },
+    {
+      "Name": "GM Tools",
+      "URL": "https://gmpm.gamemaker.io/",
+      "ReleaseStage": "Release",
+      "Scopes": "@gm-tools",
+      "Username": null,
+      "Password": null,
+      "InstallSubdirectory": "GMTools",
+      "IsDefault": true,
+      "ForceAllPackagesVisible": false
+    },
+    {
+      "Name": "Localisation",
+      "URL": "https://gmpm.gamemaker.io/",
+      "ReleaseStage": "Release",
+      "Scopes": "@localisation_plugins",
+      "Username": null,
+      "Password": null,
+      "InstallSubdirectory": "LocalisationPlugins",
+      "IsDefault": true,
+      "ForceAllPackagesVisible": false
+    }
+  ]
+}
