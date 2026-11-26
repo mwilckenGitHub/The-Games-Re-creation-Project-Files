@@ -6,6 +6,20 @@ Import the .yymps through **Tools → Import Local Package**. Include all five s
 
 Applications that directly inspect the old raw data structures can initialize them through `Unicode_set_mode(UNICODE_LOOKUP_MODE_MAP)` or select explicit planes with `Unicode_set_mode(UNICODE_LOOKUP_MODE_GRID, [0, 1])`. Grid rows are indexed by full code point, including unloaded planes. Call `Unicode_release_tables()` when the raw data structures are no longer needed. The public text functions work without that initialization.
 
+For code that adds and drops planes over time, create a cache and release it when finished.
+
+```gml
+var cache = new Unicode_plane_cache([0]);
+cache.load(1);
+var entry = cache.get($10400);
+cache.unload(1);
+cache.clean_up();
+```
+
+`get_planes()` lists the loaded planes. `set_planes([0, 1])` replaces the selection, and a failed read preserves the prior selection. `get()` returns a copy of the legacy 18-column row, or `undefined` when the plane or assignment is absent.
+
+Legacy callers can also select planes with `Unicode_set_mode(UNICODE_LOOKUP_MODE_MAP, [0, 1])`. The map opens only those plane CSVs and retains only their assigned-category rows. Use `[]` for an empty map. Grid mode maintains full code-point indexing and reserves rows for unloaded planes.
+
 Both raw modes use the same 18-column records in Included Files → Unicode. The map includes every code point with a general category other than `Cn`, including the interior of UnicodeData's First/Last ranges. Dense plane files additionally include `Cn` rows with their derived bidirectional class. Algorithmic character names and derived numeric values appear in both modes. The `<surrogate>`, `<private-use>`, `<noncharacter>`, and `<unassigned>` entries are descriptive labels for unnamed code points.
 
 ## Rebuild the tables and package

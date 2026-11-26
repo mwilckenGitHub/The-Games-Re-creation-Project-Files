@@ -111,20 +111,33 @@ function Unicode_load_legacy_csv(_path, _rows = undefined)
     return table;
 }
 
+/// @ignore Validate the entire request before opening any files or changing active tables.
+function Unicode_validate_planes(_planes)
+{
+    if (!is_array(_planes)) throw "Unicode planes must be an array.";
+    var selected = array_create(UNICODE_PLANE_COUNT, false);
+    for (var i = 0; i < array_length(_planes); ++i)
+    {
+        var plane = _planes[i];
+        if (!is_real(plane) || plane != floor(plane) || plane < 0 || plane >= UNICODE_PLANE_COUNT)
+            throw "Unicode plane must be an integer from 0 through 16.";
+        selected[plane] = true;
+    }
+    return selected;
+}
+
+/// @ignore Locate the bundled CSV for a validated plane number.
+function Unicode_plane_path(_plane)
+{
+    return UNICODE_PLANE_FILE_PATH + "Unicode Plane " + string(_plane) + ".csv";
+}
+
 /// @description Load selected bundled Unicode planes into a raw table indexed by code point.
 /// @param {Array<Real>} [_planes] Planes 0 through 16. Unloaded rows retain their code point columns.
 /// @returns {Undefined}
 function Unicode_set_grid_to_be_full_Unicode_table_and_use_grid_mode(_planes = UNICODE_PLANES_ALL)
 {
-    if (!is_array(_planes)) throw "Unicode planes must be an array.";
-    for (var i = 0; i < array_length(_planes); ++i)
-    {
-        var requested_plane = _planes[i];
-        if (!is_real(requested_plane) || requested_plane != floor(requested_plane)
-            || requested_plane < 0 || requested_plane >= UNICODE_PLANE_COUNT)
-            throw "Unicode plane must be an integer from 0 through 16.";
-    }
-
+    var selected = Unicode_validate_planes(_planes);
     var next = ds_grid_create(enum_Unicode.length, UNICODE_PLANE_COUNT * UNICODE_PLANE_HEIGHT);
     try
     {
@@ -132,10 +145,9 @@ function Unicode_set_grid_to_be_full_Unicode_table_and_use_grid_mode(_planes = U
         for (var plane = 0; plane < UNICODE_PLANE_COUNT; ++plane)
         {
             var first = plane * UNICODE_PLANE_HEIGHT;
-            if (array_contains(_planes, plane))
+            if (selected[plane])
             {
-                var path = UNICODE_PLANE_FILE_PATH + "Unicode Plane " + string(plane) + ".csv";
-                var table = Unicode_load_legacy_csv(path, UNICODE_PLANE_HEIGHT);
+                var table = Unicode_load_legacy_csv(Unicode_plane_path(plane), UNICODE_PLANE_HEIGHT);
                 try { ds_grid_set_grid_region(next, table, 0, 0, enum_Unicode.length - 1, UNICODE_PLANE_HEIGHT - 1, 0, first); }
                 finally { ds_grid_destroy(table); }
             }
@@ -156,32 +168,48 @@ function Unicode_set_grid_to_be_full_Unicode_table_and_use_grid_mode(_planes = U
     global.Unicode_lookup_mode = UNICODE_LOOKUP_MODE_GRID;
 }
 
-/// @description Load the bundled compact UnicodeData table into a map keyed by code point.
-/// @returns {Undefined}
-function Unicode_set_map_to_be_UnicodeData_table_and_use_map_mode()
+/// @ignore Copy one verified CSV into the next map and free its temporary grid.
+function Unicode_append_map_csv(_map, _path, _plane = false)
 {
-    var table = Unicode_load_legacy_csv(UNICODE_DATA_CSV_FILE_PATH + UNICODE_DATA_CSV_FILE_NAME);
-    var next = ds_map_create();
+    var table = Unicode_load_legacy_csv(_path, _plane ? UNICODE_PLANE_HEIGHT : undefined);
     try
     {
         var row_count = ds_grid_height(table);
         for (var slot = 0; slot < row_count; ++slot)
         {
+            if (_plane && table[# enum_Unicode.General_Category, slot] == "Cn") continue;
             var record = array_create(enum_Unicode.length);
             for (var field = 0; field < enum_Unicode.length; ++field)
                 record[field] = table[# field, slot];
-            ds_map_add(next, real(record[enum_Unicode.custom_ord_1]), record);
+            ds_map_add(_map, real(record[enum_Unicode.custom_ord_1]), record);
         }
     }
-    catch (problem) { ds_map_destroy(next); throw problem; }
     finally { ds_grid_destroy(table); }
+}
+
+/// @description Cache the assigned code points in all or selected Unicode planes.
+/// @param {Array<Real>} [_planes] Plane numbers 0 through 16. An empty array creates an empty map.
+/// @returns {Undefined}
+function Unicode_set_map_to_be_UnicodeData_table_and_use_map_mode(_planes = UNICODE_PLANES_ALL)
+{
+    var selected = Unicode_validate_planes(_planes);
+    var next = ds_map_create();
+    try
+    {
+        if (!array_contains(selected, false))
+            Unicode_append_map_csv(next, UNICODE_DATA_CSV_FILE_PATH + UNICODE_DATA_CSV_FILE_NAME);
+        else
+            for (var plane = 0; plane < UNICODE_PLANE_COUNT; ++plane)
+                if (selected[plane]) Unicode_append_map_csv(next, Unicode_plane_path(plane), true);
+    }
+    catch (problem) { ds_map_destroy(next); throw problem; }
     Unicode_release_tables();
     global.map_Unicode_CSV = next;
     global.Unicode_lookup_mode = UNICODE_LOOKUP_MODE_MAP;
 }
 
 /// @param {Real} _mode UNICODE_LOOKUP_MODE_GRID or UNICODE_LOOKUP_MODE_MAP.
-/// @param {Array<Real>} [_planes] Planes to include in grid mode.
+/// @param {Array<Real>} [_planes] Planes to include in either mode.
 /// @returns {Undefined}
 function Unicode_set_mode(_mode, _planes = UNICODE_PLANES_ALL)
 {
@@ -190,10 +218,116 @@ function Unicode_set_mode(_mode, _planes = UNICODE_PLANES_ALL)
     else
     {
         if (_mode != UNICODE_LOOKUP_MODE_MAP) show_debug_message("Unknown Unicode lookup mode. Using map mode.");
-        Unicode_set_map_to_be_UnicodeData_table_and_use_map_mode();
+        Unicode_set_map_to_be_UnicodeData_table_and_use_map_mode(_planes);
     }
 }
 
+
+#endregion
+
+#region Unicode plane cache
+
+/// @description An independent cache for raw Unicode metadata from selected plane CSVs.
+/// @param {Array<Real>} [_planes] Initial plane numbers from 0 through 16. Defaults to empty.
+/// @returns {Struct.Unicode_plane_cache} A cache that owns its tables until unloaded or cleaned up.
+function Unicode_plane_cache(_planes = []) constructor
+{
+    #region Instance state
+
+    plane_maps = array_create(UNICODE_PLANE_COUNT, -1);
+    disposed = false;
+
+    #endregion
+
+    #region Getters and setters
+
+    /// @returns {Array<Real>} Loaded plane numbers in ascending order.
+    static get_planes = function()
+    {
+        var loaded = [];
+        for (var plane = 0; plane < UNICODE_PLANE_COUNT; ++plane)
+            if (plane_maps[plane] != -1) array_push(loaded, plane);
+        return loaded;
+    };
+
+    /// @param {Real} _point Code point to look up.
+    /// @returns {Array|Undefined} A copy of the 18-column record, or undefined if not cached or unassigned.
+    static get = function(_point)
+    {
+        if (!is_real(_point) || _point != floor(_point) || _point < 0 || _point > $10FFFF) return undefined;
+        var table = plane_maps[_point div UNICODE_PLANE_HEIGHT];
+        if (table == -1 || !ds_map_exists(table, _point)) return undefined;
+        return variable_clone(table[? _point]);
+    };
+
+    /// @description Replace the loaded set. A failed read preserves the previous set.
+    /// @param {Array<Real>} _planes Plane numbers from 0 through 16.
+    /// @returns {Struct.Unicode_plane_cache} This cache.
+    static set_planes = function(_planes)
+    {
+        if (disposed) throw "Cannot configure a disposed Unicode plane cache.";
+        var selected = Unicode_validate_planes(_planes);
+        var next = array_create(UNICODE_PLANE_COUNT, -1);
+        try
+        {
+            for (var plane = 0; plane < UNICODE_PLANE_COUNT; ++plane)
+            {
+                if (!selected[plane]) continue;
+                next[plane] = plane_maps[plane];
+                if (next[plane] != -1) continue;
+                next[plane] = ds_map_create();
+                Unicode_append_map_csv(next[plane], Unicode_plane_path(plane), true);
+            }
+        }
+        catch (problem)
+        {
+            for (var plane = 0; plane < UNICODE_PLANE_COUNT; ++plane)
+                if (next[plane] != -1 && next[plane] != plane_maps[plane]) ds_map_destroy(next[plane]);
+            throw problem;
+        }
+        for (var plane = 0; plane < UNICODE_PLANE_COUNT; ++plane)
+            if (!selected[plane] && plane_maps[plane] != -1) ds_map_destroy(plane_maps[plane]);
+        plane_maps = next;
+        return self;
+    };
+
+    #endregion
+
+    #region Methods
+
+    /// @param {Real} _plane Plane number from 0 through 16.
+    /// @returns {Struct.Unicode_plane_cache} This cache. A loaded plane is reused.
+    static load = function(_plane)
+    {
+        return set_planes(array_concat(get_planes(), [_plane]));
+    };
+
+    /// @param {Real} _plane Plane number from 0 through 16.
+    /// @returns {Struct.Unicode_plane_cache} This cache.
+    static unload = function(_plane)
+    {
+        Unicode_validate_planes([_plane]);
+        var loaded = get_planes(), slot = array_get_index(loaded, _plane);
+        if (slot >= 0) array_delete(loaded, slot, 1);
+        return set_planes(loaded);
+    };
+
+    /// @description Release every owned table. Calling this twice is safe.
+    static clean_up = function()
+    {
+        if (disposed) return;
+        set_planes([]);
+        disposed = true;
+    };
+
+    #endregion
+
+    #region Initialization
+
+    set_planes(_planes);
+
+    #endregion
+}
 
 #endregion
 
