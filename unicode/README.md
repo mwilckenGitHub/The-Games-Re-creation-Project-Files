@@ -1,0 +1,25 @@
+# Unicode With String Functions for GameMaker
+
+Version 1.1.0 includes Unicode 18.0.0 character data and native GML scripts. The legacy functions for filtering letters, digits, punctuation, symbols, control characters and whitespace keep their existing names. Uppercase, lowercase and titlecase use full Unicode mappings, including multi-character expansions and contextual Greek sigma. The package also exposes `unicode_casefold()`, `unicode_nfc()`, `unicode_search_key()`, `Graphemes` and `Word_breaks`.
+
+Import the .yymps through **Tools → Import Local Package**. Include all five script assets and the Unicode Included Files. The runtime reads the bundled CSVs on demand. No network access or native extension is required.
+
+Applications that directly inspect the old raw data structures can initialize them through `Unicode_set_mode(UNICODE_LOOKUP_MODE_MAP)` or select explicit planes with `Unicode_set_mode(UNICODE_LOOKUP_MODE_GRID, [0, 1])`. Grid rows are indexed by full code point, including unloaded planes. Call `Unicode_release_tables()` when the raw data structures are no longer needed. The public text functions work without that initialization.
+
+## Rebuild the tables and package
+
+Use Python 3.10 or newer. From the repository root, run the following commands.
+
+```sh
+python3 unicode/build_tables.py --fetch \
+  --input-dir build/ucd-cache --project-dir build/unicode-project \
+  --fixture-dir build/unicode-fixtures
+python3 unicode/package_asset.py \
+  --base-package 'Unicode With String Functions.yymps' \
+  --scripts unicode/scripts --project-dir build/unicode-project \
+  --output 'build/Unicode With String Functions-1.1.0.yymps'
+```
+
+The first run downloads the named files from the versioned Unicode Character Database. The pinned SHA-256 hashes in `sources.json` apply to downloaded files and cache hits. Subsequent builds can omit `--fetch` to require a verified local cache. To update the Unicode version, review the upstream release, source paths and hashes together, then regenerate the tables and rerun conformance tests.
+
+The Unicode data license is in [Unicode-license.txt](Unicode-license.txt). Unicode 18.0.0 is documented by the [Unicode Consortium](https://www.unicode.org/versions/Unicode18.0.0/).
