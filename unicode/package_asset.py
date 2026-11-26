@@ -35,6 +35,7 @@ def build_archive(template, scripts, project, output):
     manifest["MetaData"].update(PackageVersion=version, IDEVersion=metadata["ide_version"])
     manifest["AudioGroups"] = [group for group in manifest["AudioGroups"] if group["name"] == "audiogroup_default"]
     folder = manifest["Folders"][0]
+    folder.update({"%Name": "Unicode", "name": "Unicode", "folderPath": "folders/Unicode.yy"})
     parent = {"name": folder["name"], "path": folder["folderPath"]}
     order = {"FolderOrderSettings": [{"name": parent["name"], "path": parent["path"], "order": 0}],
              "ResourceOrderSettings": []}

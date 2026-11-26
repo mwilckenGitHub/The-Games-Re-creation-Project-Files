@@ -6,6 +6,8 @@ Import the .yymps through **Tools → Import Local Package**. Include all five s
 
 Applications that directly inspect the old raw data structures can initialize them through `Unicode_set_mode(UNICODE_LOOKUP_MODE_MAP)` or select explicit planes with `Unicode_set_mode(UNICODE_LOOKUP_MODE_GRID, [0, 1])`. Grid rows are indexed by full code point, including unloaded planes. Call `Unicode_release_tables()` when the raw data structures are no longer needed. The public text functions work without that initialization.
 
+Both raw modes use the same 18-column records in Included Files → Unicode. The map includes every code point with a general category other than `Cn`, including the interior of UnicodeData's First/Last ranges. Dense plane files additionally include `Cn` rows with their derived bidirectional class. Algorithmic character names and derived numeric values appear in both modes. The `<surrogate>`, `<private-use>`, `<noncharacter>`, and `<unassigned>` entries are descriptive labels for unnamed code points.
+
 ## Rebuild the tables and package
 
 Use Python 3.10 or newer. From the repository root, run the following commands.
@@ -14,6 +16,7 @@ Use Python 3.10 or newer. From the repository root, run the following commands.
 python3 unicode/build_tables.py --fetch \
   --input-dir build/ucd-cache --project-dir build/unicode-project \
   --fixture-dir build/unicode-fixtures
+python3 unicode/verify_tables.py build/ucd-cache build/unicode-project/datafiles/Unicode
 python3 unicode/package_asset.py \
   --base-package 'Unicode With String Functions.yymps' \
   --scripts unicode/scripts --project-dir build/unicode-project \

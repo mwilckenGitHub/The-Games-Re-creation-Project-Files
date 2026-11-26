@@ -5,8 +5,8 @@
   "isDnD": false,
   "name": "Text_properties",
   "parent": {
-    "name": "Public",
-    "path": "folders/Scripts/Main/Public.yy"
+    "name": "Unicode",
+    "path": "folders/Unicode.yy"
   },
   "resourceType": "GMScript",
   "resourceVersion": "2.0"

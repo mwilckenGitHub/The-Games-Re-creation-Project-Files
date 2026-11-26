@@ -170,8 +170,8 @@ for filename,output_name in [('GraphemeBreakTest.txt','grapheme-tests.json'),('W
     (fixtures/output_name).write_text(json.dumps(cases,separators=(',',':'))+'\n')
     print(filename, len(cases))
 
-# Preserve both documented CSV layouts. Dense plane files also carry algorithmic names,
-# derived bidi defaults, and Unihan numeric values omitted from the compact source.
+# Use one set of expanded records for both legacy lookup modes. UnicodeData lists
+# only the boundaries of some assigned ranges, including the ideographs and Hangul.
 raw_rows={}
 range_rows=[]
 for line in (work/'UnicodeData.txt').read_text().splitlines():
@@ -180,13 +180,6 @@ for line in (work/'UnicodeData.txt').read_text().splitlines():
     raw_rows[cp]=row
     if row[1].endswith(', First>'):first=cp
     elif row[1].endswith(', Last>'):range_rows.append((first,cp,raw_rows[first]))
-with (project/'datafiles/UnicodeData.csv').open('w',newline='') as plain,(out/'UnicodeData.csv').open('w',newline='') as extended:
-    standard=csv.writer(plain,lineterminator='\n')
-    legacy=csv.writer(extended,lineterminator='\n')
-    for cp,row in raw_rows.items():
-        standard.writerow(row)
-        legacy.writerow([f'{cp:08X}',cp,*row,cp])
-
 names={}
 for lo,hi,fields in records('DerivedName.txt'):
     for cp in range(lo,hi+1):names[cp]=fields[0].replace('*',f'{cp:04X}')
@@ -199,18 +192,36 @@ for match in re.finditer(r'# @missing: ([0-9A-F]+)\.\.([0-9A-F]+); (\w+)',(work/
     lo,hi=[int(v,16) for v in match.group(1,2)]
     bidi[lo:hi+1]=[short[match[3]]]*(hi-lo+1)
 for lo,hi,fields in records('DerivedBidiClass.txt'):bidi[lo:hi+1]=[fields[0]]*(hi-lo+1)
+noncharacters = set()
+for lo, hi, fields in records('PropList.txt'):
+    if fields[0] == 'Noncharacter_Code_Point':
+        noncharacters.update(range(lo, hi + 1))
+
 cursor=0
-for plane in range(17):
-    with (out/'Planes'/f'Unicode Plane {plane}.csv').open('w',newline='') as stream:
-        writer=csv.writer(stream,lineterminator='\n')
-        for cp in range(plane<<16,(plane+1)<<16):
-            while cursor<len(range_rows) and cp>range_rows[cursor][1]:cursor+=1
-            if cp in raw_rows:row=raw_rows[cp].copy()
-            elif cursor<len(range_rows) and range_rows[cursor][0]<cp<range_rows[cursor][1]:
-                row=range_rows[cursor][2].copy()
-                row[1]={'Cs':'<surrogate>','Co':'<private-use>'}.get(row[2],'<unassigned>')
-            else:row=['','<unassigned>','Cn','0',bidi[cp],'','','','','N','','','','','']
-            row[0]=f'{cp:04X}'
-            if cp in names:row[1]=names[cp]
-            row[8]=numerics.get(cp,row[8])
-            writer.writerow([f'{cp:08X}',cp,*row,cp])
+compact_count=0
+with (out/'UnicodeData.csv').open('w', newline='') as compact_stream:
+    compact=csv.writer(compact_stream, lineterminator='\n')
+    for plane in range(17):
+        with (out/'Planes'/f'Unicode Plane {plane}.csv').open('w', newline='') as stream:
+            dense=csv.writer(stream, lineterminator='\n')
+            for cp in range(plane << 16, (plane + 1) << 16):
+                while cursor<len(range_rows) and cp>range_rows[cursor][1]:
+                    cursor+=1
+                if cp in raw_rows:
+                    row=raw_rows[cp].copy()
+                elif cursor<len(range_rows) and range_rows[cursor][0]<cp<range_rows[cursor][1]:
+                    row=range_rows[cursor][2].copy()
+                else:
+                    label='<noncharacter>' if cp in noncharacters else '<unassigned>'
+                    row=['',label,'Cn','0',bidi[cp],'','','','','N','','','','','']
+                row[0]=f'{cp:04X}'
+                if row[2] in ('Cs', 'Co'):
+                    row[1]={'Cs':'<surrogate>','Co':'<private-use>'}[row[2]]
+                row[1]=names.get(cp,row[1])
+                row[8]=numerics.get(cp,row[8])
+                record=[f'{cp:08X}',cp,*row,cp]
+                dense.writerow(record)
+                if row[2]!='Cn':
+                    compact.writerow(record)
+                    compact_count+=1
+print('UnicodeData.csv', compact_count, 'assigned-category rows')
